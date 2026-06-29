@@ -25,6 +25,26 @@ services:
       retries: 5
     networks: [obs]
 
+  day19-stub:
+    image: lab23-app
+    container_name: day23-day19-stub
+    command: ["python", "/integration/monitor-day19-vector-store.py"]
+    volumes:
+      - ./05-integration:/integration:ro
+    depends_on:
+      - app
+    networks: [obs]
+
+  day20-stub:
+    image: lab23-app
+    container_name: day23-day20-stub
+    command: ["python", "/integration/monitor-day20-llama-cpp.py"]
+    volumes:
+      - ./05-integration:/integration:ro
+    depends_on:
+      - app
+    networks: [obs]
+
   prometheus:
     # v2.55 = the deck-sanctioned pre-v3 migration waypoint (deck §4: "upgrade to
     # v2.55 before v3; rollback only to v2.55"). To try Prometheus 3.x native
@@ -59,6 +79,11 @@ services:
       - ./02-prometheus-grafana/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     environment:
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-https://hooks.slack.com/services/REPLACE/ME}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        printf '%s' "$$SLACK_WEBHOOK_URL" > /tmp/slack_webhook_url
+        exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager
     networks: [obs]
 
   grafana:

@@ -1,4 +1,5 @@
 .env
+.runtime/
 __pycache__/
 *.pyc
 *.pyo
@@ -11,6 +12,9 @@ benchmarks/*.csv
 benchmarks/*.json
 submission/screenshots/*.png
 submission/screenshots/*.jpg
+!submission/screenshots/
+!submission/screenshots/*.png
+!submission/screenshots/*.jpg
 
 # Local OS junk
 .DS_Store
@@ -21,6 +25,9 @@ Thumbs.db
 04-drift-detection/reports/
 04-drift-detection/drift-summary.json
 **/drift-summary.json
+!04-drift-detection/reports/
+!04-drift-detection/reports/drift-summary.json
+!04-drift-detection/reports/drift-report.html
 
 # AgentOps bonus generated artifact (students create their own in submission/)
 agentops-report.json

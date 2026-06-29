@@ -1,92 +1,144 @@
 # Day 23 Lab Reflection
 
-> Fill in each section. Grader reads the "What I'd change" paragraph closest.
-
-**Student:** _your name_
-**Submission date:** _YYYY-MM-DD_
-**Lab repo URL:** _public GitHub URL_
+**Student:** Nguyễn Việt Hoàng
+**Submission date:** 2026-06-29
+**Lab repo URL:** https://github.com/ritvien/Day23-Track2-Observability-Lab
 
 ---
 
 ## 1. Hardware + setup output
 
-Paste output of `python3 00-setup/verify-docker.py`:
+Output from `python 00-setup/verify-docker.py`:
 
-```
-... paste here ...
+```json
+{
+  "docker": {"ok": true, "version": "29.5.3"},
+  "compose_v2": {"ok": true, "version": "5.1.4"},
+  "ram_gb_available": 7.65,
+  "ram_ok": true,
+  "required_ports": [8000, 9090, 9093, 3000, 3100, 16686, 4317, 4318, 8888],
+  "bound_ports": [],
+  "all_ports_free": true
+}
 ```
 
 ---
 
-## 2. Track 02 — Dashboards & Alerts
+## 2. Track 02 - Dashboards & Alerts
 
-### 6 essential panels (screenshot)
+Grafana provisioned the Day 23 dashboards automatically:
 
-Drop `submission/screenshots/dashboard-overview.png`.
+- `AI Service Overview (Day 23)`
+- `SLO Burn Rate (Day 23)`
+- `Cost & Tokens (Day 23)`
+- `Cross-Day Stack (Day 23 integrative)`
 
-### Burn-rate panel
+I generated load with 10 parallel PowerShell workers for 60 seconds. Prometheus then showed about `28.58` requests/sec and about `1143.97` tokens/sec in the 1 minute window. The active request gauge returned to `0` after the load stopped.
 
-Drop `submission/screenshots/slo-burn-rate.png`.
-
-### Alert fire + resolve
+Alert test result:
 
 | When | What | Evidence |
 |---|---|---|
-| _T0_ | killed `day23-app`         | screenshot `alertmanager-firing.png` |
-| _T0+90s_ | `ServiceDown` fired   | screenshot `slack-firing.png` |
-| _T1_ | restored app              | — |
-| _T1+60s_ | alert resolved        | screenshot `slack-resolved.png` |
+| T0 | stopped `day23-app` | `docker stop day23-app` |
+| T0+105s | `ServiceDown` active | Alertmanager `/api/v2/alerts` showed `ServiceDown` with state `active` |
+| T1 | restarted app | `docker start day23-app` |
+| T1+60s | alert resolved | Alertmanager no longer had active `ServiceDown` |
 
-### One thing surprised me about Prometheus / Grafana
-
-_(2-3 sentences)_
+One thing that surprised me about Prometheus/Grafana: dashboards only became useful after I created traffic with enough cardinality and time range. A dashboard can be technically provisioned but still operationally empty until the service emits representative requests, errors, tokens, and latency buckets.
 
 ---
 
-## 3. Track 03 — Tracing & Logs
+## 3. Track 03 - Tracing & Logs
 
-### One trace screenshot from Jaeger
+Jaeger trace used for evidence:
 
-Drop `submission/screenshots/jaeger-trace.png` showing `embed-text → vector-search → generate-tokens` spans.
-
-### Log line correlated to trace
-
-Paste the log line and the trace_id it links to:
-
-```
-... paste here ...
+```text
+trace_id: 9eac6e5ec71bbb03e7556c2d6dc42072
+service: inference-api
+spans: predict -> embed-text, vector-search, generate-tokens
 ```
 
-### Tail-sampling math
+The `generate-tokens` span included GenAI semantic attributes:
 
-If your service produced N traces/sec, what fraction did the policy keep? Show the calculation.
+```text
+gen_ai.usage.input_tokens = 4
+gen_ai.usage.output_tokens = 18
+gen_ai.response.finish_reason = stop
+```
 
----
-
-## 4. Track 04 — Drift Detection
-
-### PSI scores
-
-Paste `04-drift-detection/reports/drift-summary.json`:
+Structured log line correlated to a request:
 
 ```json
-... paste here ...
+{"model": "llama3-mock", "input_tokens": 4, "output_tokens": 12, "quality": 0.811, "duration_seconds": 0.3403, "trace_id": "e47b98d6c11c75f2c5f480b53b3c6ac7", "event": "prediction served", "level": "info", "timestamp": "2026-06-29T06:25:29.980031Z"}
 ```
 
-### Which test fits which feature?
-
-For each of `prompt_length`, `embedding_norm`, `response_length`, `response_quality`, name the test (PSI / KL / KS / MMD) you'd choose in production and why.
+Tail-sampling math: the collector keeps 100% of error traces, 100% of traces with duration over 2 seconds, and only 1% of healthy traces. During testing, normal healthy traces were received by the collector but dropped by the `probabilistic-1pct` policy. I used prompt `slow-tail-candidate-349`, which deterministically produced a `generate-tokens` span around 2.2 seconds, so the `keep-slow` rule retained it for Jaeger.
 
 ---
 
-## 5. Track 05 — Cross-Day Integration
+## 4. Track 04 - Drift Detection
 
-### Which prior-day metric was hardest to expose? Why?
+`04-drift-detection/reports/drift-summary.json`:
 
-_(2-3 sentences. If you didn't have prior days running, write about which one would be hardest based on the integration scripts.)_
+```json
+{
+  "prompt_length": {
+    "psi": 3.461,
+    "kl": 1.7982,
+    "ks_stat": 0.702,
+    "ks_pvalue": 0.0,
+    "drift": "yes"
+  },
+  "embedding_norm": {
+    "psi": 0.0187,
+    "kl": 0.0324,
+    "ks_stat": 0.052,
+    "ks_pvalue": 0.133853,
+    "drift": "no"
+  },
+  "response_length": {
+    "psi": 0.0162,
+    "kl": 0.0178,
+    "ks_stat": 0.056,
+    "ks_pvalue": 0.086899,
+    "drift": "no"
+  },
+  "response_quality": {
+    "psi": 8.8486,
+    "kl": 13.5011,
+    "ks_stat": 0.941,
+    "ks_pvalue": 0.0,
+    "drift": "yes"
+  }
+}
+```
+
+Which test fits which feature:
+
+- `prompt_length`: PSI is easy to explain to product and support teams because the distribution shift is a large movement across length buckets. KS is also useful because it catches the CDF shift without assuming normality.
+- `embedding_norm`: KS is a good production guard because this should be stable and approximately continuous; small distribution shifts matter more than bucket interpretation.
+- `response_length`: PSI is a practical dashboard metric because length changes are histogram-friendly and easy to reason about operationally.
+- `response_quality`: KL or PSI both fit because quality is bounded in `[0,1]` and the full shape changed from high-quality beta-like scores to low-quality scores. I would alert on PSI for readability and investigate with KL/KS.
+
+The script also wrote `04-drift-detection/reports/drift-report.html`. Evidently was not installed in this Python 3.9 environment, so the script generated a fallback HTML report from the same PSI/KL/KS results.
+
+---
+
+## 5. Track 05 - Cross-Day Integration
+
+I connected prior-day sources using Docker Compose stub exporters:
+
+```text
+day19-stub -> day19_qdrant_collections = 3
+day20-stub -> day20_llamacpp_tokens_per_second ~= 22.72
+```
+
+The hardest prior-day metric to expose would be Day 20 llama.cpp tokens/sec. Unlike a web API health metric, token throughput needs either native model-server instrumentation or a sidecar that understands request/completion events. Without a stable metric contract, dashboards can show activity but not the true cost and capacity pressure of serving.
 
 ---
 
 ## 6. The single change that mattered most
 
-> **Grader reads this closest.** What one thing about your stack design — a metric you added, a label you dropped, a panel you reorganized, an alert threshold you tuned — made the biggest difference between "works" and "useful"? Write 1-2 paragraphs. Connect it to a concept from the deck.
+The single most important change was fixing the manual tracing context so `predict` became the current span and `embed-text`, `vector-search`, and `generate-tokens` became children in one trace. Before that, the service emitted spans, but they were not useful as an end-to-end story. After the change, one trace showed the actual request path and the slow `generate-tokens` span carried the GenAI token attributes.
+
+That change connects directly to the tracing and sampling concept from the deck: observability is not just collecting signals, it is preserving the relationships between signals. A metric can say latency is high, but a correlated trace can show where the latency lives. Once the trace hierarchy was correct, tail-sampling also became meaningful: healthy traces could be dropped cheaply, while slow traces remained available for debugging.

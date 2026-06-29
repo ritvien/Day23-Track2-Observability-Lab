@@ -8,7 +8,7 @@
   "templating": {"list": [
     {"name": "model", "type": "query", "datasource": {"type": "prometheus", "uid": "prometheus"},
      "query": "label_values(inference_requests_total, model)",
-     "refresh": 2, "includeAll": true, "multi": false, "current": {"value": "$__all", "text": "All"}}
+     "refresh": 2, "includeAll": true, "allValue": ".*", "multi": false, "current": {"value": ".*", "text": "All"}}
   ]},
   "panels": [
     {
